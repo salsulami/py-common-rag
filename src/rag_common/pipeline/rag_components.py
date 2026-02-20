@@ -34,23 +34,28 @@ class RagComponents:
         model: str = "gpt-4.1-mini",
         prompt_overrides: Mapping[str, str] | None = None,
         normalize_parsed_text_with_llm: bool = False,
+        llm_adapter_kwargs: JSONDict | None = None,
     ) -> None:
         self.prompts = PromptRegistry(prompt_overrides)
+        llm_adapter_kwargs = dict(llm_adapter_kwargs or {})
 
         self.query_expander = QueryExpander(
             openai_client=openai_client,
             model=model,
             prompt_registry=self.prompts,
+            llm_adapter_kwargs=llm_adapter_kwargs,
         )
         self.query_decomposer = QueryDecomposer(
             openai_client=openai_client,
             model=model,
             prompt_registry=self.prompts,
+            llm_adapter_kwargs=llm_adapter_kwargs,
         )
         self.hypothesis_generator = HypothesisGenerator(
             openai_client=openai_client,
             model=model,
             prompt_registry=self.prompts,
+            llm_adapter_kwargs=llm_adapter_kwargs,
         )
 
         self.pdf_parser = PdfParser(
@@ -58,18 +63,21 @@ class RagComponents:
             model=model,
             prompt_registry=self.prompts,
             normalize_with_llm=normalize_parsed_text_with_llm,
+            llm_adapter_kwargs=llm_adapter_kwargs,
         )
         self.pptx_parser = PptxParser(
             openai_client=openai_client,
             model=model,
             prompt_registry=self.prompts,
             normalize_with_llm=normalize_parsed_text_with_llm,
+            llm_adapter_kwargs=llm_adapter_kwargs,
         )
         self.docx_parser = DocxParser(
             openai_client=openai_client,
             model=model,
             prompt_registry=self.prompts,
             normalize_with_llm=normalize_parsed_text_with_llm,
+            llm_adapter_kwargs=llm_adapter_kwargs,
         )
         self.parser_router = DocumentParserRouter(
             pdf_parser=self.pdf_parser,
@@ -80,6 +88,21 @@ class RagComponents:
     def update_prompt(self, key: str, prompt: str) -> None:
         """Update a shared prompt key used by components."""
         self.prompts.set(key, prompt)
+
+    def set_visual_error_policy(self, *, continue_on_error: bool, max_visual_errors: int = 20) -> None:
+        """Apply a shared visual extraction error policy to all document parsers."""
+        self.pdf_parser.set_visual_error_policy(
+            continue_on_error=continue_on_error,
+            max_visual_errors=max_visual_errors,
+        )
+        self.pptx_parser.set_visual_error_policy(
+            continue_on_error=continue_on_error,
+            max_visual_errors=max_visual_errors,
+        )
+        self.docx_parser.set_visual_error_policy(
+            continue_on_error=continue_on_error,
+            max_visual_errors=max_visual_errors,
+        )
 
     def expand_query(
         self,
@@ -138,11 +161,25 @@ class RagComponents:
         source_path: str,
         *,
         dpi: int = 170,
+        continue_on_error: bool | None = None,
+        max_errors: int | None = None,
     ) -> VisualExtractionResult:
         """Process an entire document and return manifest + all items."""
-        return self.parser_router.extract_visual_result(source_path, dpi=dpi)
+        return self.parser_router.extract_visual_result(
+            source_path,
+            dpi=dpi,
+            continue_on_error=continue_on_error,
+            max_errors=max_errors,
+        )
 
-    def extract_visual_json(self, source_path: str, *, dpi: int = 170) -> JSONDict:
+    def extract_visual_json(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+        continue_on_error: bool | None = None,
+        max_errors: int | None = None,
+    ) -> JSONDict:
         """
         Process an entire document and return:
         {
@@ -150,4 +187,22 @@ class RagComponents:
           "items": [{"index": ..., "markdown": ..., "caption": ...}, ...]
         }
         """
-        return self.parser_router.extract_visual_json(source_path, dpi=dpi)
+        return self.parser_router.extract_visual_json(
+            source_path,
+            dpi=dpi,
+            continue_on_error=continue_on_error,
+            max_errors=max_errors,
+        )
+
+    def runtime_diagnostics(self) -> JSONDict:
+        """Return operational diagnostics for deployment checks."""
+        return {
+            "parsers": self.parser_router.runtime_diagnostics(),
+            "retrieval": {
+                "query_expander": self.query_expander.runtime_diagnostics(),
+                "query_decomposer": self.query_decomposer.runtime_diagnostics(),
+            },
+            "reasoning": {
+                "hypothesis_generator": self.hypothesis_generator.runtime_diagnostics(),
+            },
+        }

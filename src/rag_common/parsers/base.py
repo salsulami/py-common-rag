@@ -2,20 +2,25 @@
 
 from __future__ import annotations
 
+import logging
 from abc import ABC, abstractmethod
 from collections.abc import Iterator
 from pathlib import Path
 from typing import Any
 
+from rag_common.exceptions import VisualExtractionErrorLimitExceeded
 from rag_common.llm import OpenAIClientAdapter
 from rag_common.prompts import PromptRegistry
 from rag_common.types import (
     DocumentChunk,
     JSONDict,
     ParsedDocument,
+    VisualExtractionError,
     VisualExtractionItem,
     VisualExtractionResult,
 )
+
+LOGGER = logging.getLogger(__name__)
 
 
 class BaseDocumentParser(ABC):
@@ -34,21 +39,33 @@ class BaseDocumentParser(ABC):
         normalize_with_llm: bool = False,
         prompt_registry: PromptRegistry | None = None,
         prompt_override: str | None = None,
+        llm_adapter_kwargs: JSONDict | None = None,
+        continue_on_visual_error: bool = False,
+        max_visual_errors: int = 20,
     ) -> None:
         self._prompts = prompt_registry if prompt_registry else PromptRegistry()
         if prompt_override:
             self._prompts.set(self.prompt_key, prompt_override)
         self._normalize_with_llm = normalize_with_llm and openai_client is not None
-        self._llm = (
-            OpenAIClientAdapter(
-                openai_client,
-                model=model,
-                temperature=temperature,
-                max_output_tokens=max_output_tokens,
-            )
-            if openai_client is not None
-            else None
-        )
+        self._continue_on_visual_error = continue_on_visual_error
+        self._max_visual_errors = max(max_visual_errors, 0)
+
+        llm_adapter_kwargs = dict(llm_adapter_kwargs or {})
+        if openai_client is not None:
+            try:
+                self._llm = OpenAIClientAdapter(
+                    openai_client,
+                    model=model,
+                    temperature=temperature,
+                    max_output_tokens=max_output_tokens,
+                    **llm_adapter_kwargs,
+                )
+            except TypeError as exc:
+                raise ValueError(
+                    "Invalid llm_adapter_kwargs passed to parser OpenAIClientAdapter."
+                ) from exc
+        else:
+            self._llm = None
 
     def update_default_prompt(self, prompt: str) -> None:
         """Update the default parser cleanup prompt."""
@@ -57,6 +74,23 @@ class BaseDocumentParser(ABC):
     def update_prompt(self, key: str, prompt: str) -> None:
         """Update any prompt key used by this parser."""
         self._prompts.set(key, prompt)
+
+    def set_visual_error_policy(self, *, continue_on_error: bool, max_visual_errors: int) -> None:
+        """Configure how all-at-once visual extraction handles per-item failures."""
+        self._continue_on_visual_error = continue_on_error
+        self._max_visual_errors = max(max_visual_errors, 0)
+
+    def runtime_diagnostics(self) -> JSONDict:
+        """Return parser operational diagnostics."""
+        payload: JSONDict = {
+            "normalize_with_llm": self._normalize_with_llm,
+            "llm_enabled": self._llm is not None,
+            "continue_on_visual_error": self._continue_on_visual_error,
+            "max_visual_errors": self._max_visual_errors,
+        }
+        if self._llm is not None:
+            payload["llm"] = self._llm.runtime_config()
+        return payload
 
     @abstractmethod
     def parse(self, source_path: str) -> ParsedDocument:
@@ -77,14 +111,28 @@ class BaseDocumentParser(ABC):
         source_path: str,
         *,
         dpi: int = 170,
+        continue_on_error: bool | None = None,
+        max_errors: int | None = None,
     ) -> VisualExtractionResult:
         raise NotImplementedError(
             f"{self.__class__.__name__} does not implement visual result extraction."
         )
 
-    def extract_visual_json(self, source_path: str, *, dpi: int = 170) -> JSONDict:
+    def extract_visual_json(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+        continue_on_error: bool | None = None,
+        max_errors: int | None = None,
+    ) -> JSONDict:
         """Process all items and return a full JSON payload."""
-        return self.extract_visual_result(source_path, dpi=dpi).to_dict()
+        return self.extract_visual_result(
+            source_path,
+            dpi=dpi,
+            continue_on_error=continue_on_error,
+            max_errors=max_errors,
+        ).to_dict()
 
     def stream_visual_json_items(
         self,
@@ -173,6 +221,61 @@ class BaseDocumentParser(ABC):
             metadata={"item_type": item_type},
             raw_response=payload,
         )
+
+    def _collect_visual_items(
+        self,
+        *,
+        source_path: str,
+        item_type: str,
+        prompt_key: str,
+        images: Iterator[tuple[int, bytes]],
+        continue_on_error: bool | None = None,
+        max_errors: int | None = None,
+    ) -> tuple[list[VisualExtractionItem], list[VisualExtractionError], int]:
+        allow_errors = self._continue_on_visual_error if continue_on_error is None else continue_on_error
+        max_error_budget = self._max_visual_errors if max_errors is None else max(max_errors, 0)
+
+        items: list[VisualExtractionItem] = []
+        errors: list[VisualExtractionError] = []
+        attempted = 0
+
+        for index, image_bytes in images:
+            attempted += 1
+            try:
+                items.append(
+                    self._extract_visual_item(
+                        source_path=source_path,
+                        index=index,
+                        item_type=item_type,
+                        image_bytes=image_bytes,
+                        prompt_key=prompt_key,
+                    )
+                )
+            except Exception as exc:
+                if not allow_errors:
+                    raise
+
+                errors.append(
+                    VisualExtractionError(
+                        index=index,
+                        item_type=item_type,
+                        error=str(exc),
+                    )
+                )
+                LOGGER.warning(
+                    "Visual extraction item failed parser=%s source=%s index=%s error=%s",
+                    self.__class__.__name__,
+                    source_path,
+                    index,
+                    exc,
+                )
+                if len(errors) > max_error_budget:
+                    raise VisualExtractionErrorLimitExceeded(
+                        "Visual extraction exceeded configured error budget: "
+                        f"errors={len(errors)} max_errors={max_error_budget}"
+                    ) from exc
+
+        return items, errors, attempted
 
 
 def _safe_string(value: Any) -> str | None:

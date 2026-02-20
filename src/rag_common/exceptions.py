@@ -21,5 +21,9 @@ class DocumentConversionError(RagCommonError):
     """Raised when a source file cannot be converted for visual rendering."""
 
 
+class VisualExtractionErrorLimitExceeded(RagCommonError):
+    """Raised when visual extraction exceeds the configured error budget."""
+
+
 class UnsupportedFileTypeError(RagCommonError):
     """Raised when no parser supports a file extension."""

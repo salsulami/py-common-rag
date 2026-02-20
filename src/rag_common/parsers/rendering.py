@@ -46,6 +46,14 @@ def iter_office_page_images(source_path: Path, *, dpi: int = 170) -> Iterator[tu
         yield from iter_pdf_page_images(pdf_path, dpi=dpi)
 
 
+def visual_runtime_diagnostics() -> dict[str, bool]:
+    """Return runtime availability flags used by visual extraction."""
+    return {
+        "pymupdf_available": _has_pymupdf(),
+        "soffice_available": _has_soffice(),
+    }
+
+
 def _convert_to_pdf_with_soffice(
     *,
     source_path: Path,
@@ -93,3 +101,15 @@ def _load_pymupdf() -> Any:
             "Visual screenshot rendering requires 'pymupdf'. Install with: pip install pymupdf"
         ) from exc
     return fitz
+
+
+def _has_pymupdf() -> bool:
+    try:
+        import fitz  # noqa: F401
+    except ImportError:
+        return False
+    return True
+
+
+def _has_soffice() -> bool:
+    return shutil.which("soffice") is not None

@@ -89,11 +89,34 @@ class VisualExtractionItem:
     raw_response: JSONDict | None = None
 
     def to_dict(self) -> JSONDict:
-        return {
+        payload: JSONDict = {
             "index": self.index,
             "markdown": self.markdown,
             "caption": self.caption,
         }
+        if self.metadata:
+            payload["metadata"] = dict(self.metadata)
+        return payload
+
+
+@dataclass(slots=True)
+class VisualExtractionError:
+    """Captures a recoverable per-item extraction failure."""
+
+    index: int
+    item_type: str
+    error: str
+    metadata: JSONDict = field(default_factory=dict)
+
+    def to_dict(self) -> JSONDict:
+        payload: JSONDict = {
+            "index": self.index,
+            "item_type": self.item_type,
+            "error": self.error,
+        }
+        if self.metadata:
+            payload["metadata"] = dict(self.metadata)
+        return payload
 
 
 @dataclass(slots=True)
@@ -126,9 +149,13 @@ class VisualExtractionResult:
 
     file_manifest: FileManifest
     items: list[VisualExtractionItem]
+    errors: list[VisualExtractionError] = field(default_factory=list)
 
     def to_dict(self) -> JSONDict:
-        return {
+        payload: JSONDict = {
             "file_manifest": self.file_manifest.to_dict(),
             "items": [item.to_dict() for item in self.items],
         }
+        if self.errors:
+            payload["errors"] = [error.to_dict() for error in self.errors]
+        return payload

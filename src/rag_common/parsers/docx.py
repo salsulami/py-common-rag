@@ -93,17 +93,31 @@ class DocxParser(BaseDocumentParser):
         source_path: str,
         *,
         dpi: int = 170,
+        continue_on_error: bool | None = None,
+        max_errors: int | None = None,
     ) -> VisualExtractionResult:
         path = self._resolve_source_path(source_path)
-        items = list(self.iter_visual_items(str(path), dpi=dpi))
+        items, errors, attempted = self._collect_visual_items(
+            source_path=str(path),
+            item_type="page",
+            prompt_key=self.vision_prompt_key,
+            images=iter_office_page_images(path, dpi=dpi),
+            continue_on_error=continue_on_error,
+            max_errors=max_errors,
+        )
         manifest = FileManifest(
             source_path=str(path),
             file_type=path.suffix.lower().lstrip("."),
             item_type="page",
             item_count=len(items),
-            metadata={"dpi": dpi},
+            metadata={
+                "dpi": dpi,
+                "attempted_items": attempted,
+                "successful_items": len(items),
+                "failed_items": len(errors),
+            },
         )
-        return VisualExtractionResult(file_manifest=manifest, items=items)
+        return VisualExtractionResult(file_manifest=manifest, items=items, errors=errors)
 
 
 def _iter_blocks(document: Any, paragraph_cls: type[Any], table_cls: type[Any]) -> Iterator[Any]:

@@ -23,20 +23,30 @@ class QueryDecomposer:
         max_output_tokens: int = 1400,
         prompt_registry: PromptRegistry | None = None,
         prompt_override: str | None = None,
+        llm_adapter_kwargs: dict[str, Any] | None = None,
     ) -> None:
         self._prompts = prompt_registry if prompt_registry else PromptRegistry()
         if prompt_override:
             self._prompts.set(self.prompt_key, prompt_override)
-        self._llm = OpenAIClientAdapter(
-            openai_client,
-            model=model,
-            temperature=temperature,
-            max_output_tokens=max_output_tokens,
-        )
+        llm_adapter_kwargs = dict(llm_adapter_kwargs or {})
+        try:
+            self._llm = OpenAIClientAdapter(
+                openai_client,
+                model=model,
+                temperature=temperature,
+                max_output_tokens=max_output_tokens,
+                **llm_adapter_kwargs,
+            )
+        except TypeError as exc:
+            raise ValueError("Invalid llm_adapter_kwargs for QueryDecomposer.") from exc
 
     def update_default_prompt(self, prompt: str) -> None:
         """Update the default prompt used by this component."""
         self._prompts.set(self.prompt_key, prompt)
+
+    def runtime_diagnostics(self) -> dict[str, Any]:
+        """Return operational diagnostics for this component."""
+        return self._llm.runtime_config()
 
     def decompose(
         self,

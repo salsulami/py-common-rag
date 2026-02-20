@@ -10,6 +10,7 @@ from rag_common.parsers.base import BaseDocumentParser
 from rag_common.parsers.docx import DocxParser
 from rag_common.parsers.pdf import PdfParser
 from rag_common.parsers.pptx import PptxParser
+from rag_common.parsers.rendering import visual_runtime_diagnostics
 from rag_common.types import JSONDict, ParsedDocument, VisualExtractionItem, VisualExtractionResult
 
 
@@ -62,12 +63,42 @@ class DocumentParserRouter:
         source_path: str,
         *,
         dpi: int = 170,
+        continue_on_error: bool | None = None,
+        max_errors: int | None = None,
     ) -> VisualExtractionResult:
         parser = self._resolve_parser(source_path, for_visual=True)
-        return parser.extract_visual_result(source_path, dpi=dpi)
+        return parser.extract_visual_result(
+            source_path,
+            dpi=dpi,
+            continue_on_error=continue_on_error,
+            max_errors=max_errors,
+        )
 
-    def extract_visual_json(self, source_path: str, *, dpi: int = 170) -> JSONDict:
-        return self.extract_visual_result(source_path, dpi=dpi).to_dict()
+    def extract_visual_json(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+        continue_on_error: bool | None = None,
+        max_errors: int | None = None,
+    ) -> JSONDict:
+        return self.extract_visual_result(
+            source_path,
+            dpi=dpi,
+            continue_on_error=continue_on_error,
+            max_errors=max_errors,
+        ).to_dict()
+
+    def runtime_diagnostics(self) -> JSONDict:
+        """Operational diagnostics useful for deployment readiness checks."""
+        return {
+            "visual_runtime": visual_runtime_diagnostics(),
+            "registered_extensions": sorted(self._parsers),
+            "parsers": {
+                ext: parser.runtime_diagnostics()
+                for ext, parser in sorted(self._parsers.items())
+            },
+        }
 
     def _resolve_parser(self, source_path: str, *, for_visual: bool = False) -> BaseDocumentParser:
         ext = Path(source_path).suffix.lower()
