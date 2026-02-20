@@ -2,14 +2,22 @@
 
 from __future__ import annotations
 
-from collections.abc import Mapping
+from collections.abc import Iterator, Mapping
 from typing import Any, Sequence
 
 from rag_common.parsers import DocxParser, DocumentParserRouter, PdfParser, PptxParser
 from rag_common.prompts import PromptRegistry
 from rag_common.reasoning import HypothesisGenerator
 from rag_common.retrieval import QueryDecomposer, QueryExpander
-from rag_common.types import HypothesisSet, ParsedDocument, QueryDecompositionResult, QueryExpansionResult
+from rag_common.types import (
+    HypothesisSet,
+    JSONDict,
+    ParsedDocument,
+    QueryDecompositionResult,
+    QueryExpansionResult,
+    VisualExtractionItem,
+    VisualExtractionResult,
+)
 
 
 class RagComponents:
@@ -106,3 +114,40 @@ class RagComponents:
 
     def parse_document(self, source_path: str) -> ParsedDocument:
         return self.parser_router.parse(source_path)
+
+    def stream_visual_items(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+    ) -> Iterator[VisualExtractionItem]:
+        """Stream page/slide extraction results one item at a time."""
+        yield from self.parser_router.stream_visual_items(source_path, dpi=dpi)
+
+    def stream_visual_json_items(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+    ) -> Iterator[JSONDict]:
+        """Stream item JSON payloads (`index`, `markdown`, `caption`) one by one."""
+        yield from self.parser_router.stream_visual_json_items(source_path, dpi=dpi)
+
+    def extract_visual_result(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+    ) -> VisualExtractionResult:
+        """Process an entire document and return manifest + all items."""
+        return self.parser_router.extract_visual_result(source_path, dpi=dpi)
+
+    def extract_visual_json(self, source_path: str, *, dpi: int = 170) -> JSONDict:
+        """
+        Process an entire document and return:
+        {
+          "file_manifest": {...},
+          "items": [{"index": ..., "markdown": ..., "caption": ...}, ...]
+        }
+        """
+        return self.parser_router.extract_visual_json(source_path, dpi=dpi)

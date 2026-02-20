@@ -76,3 +76,59 @@ class HypothesisSet:
     hypotheses: list[HypothesisCandidate]
     overall_risk: str | None = None
     raw_response: JSONDict | None = None
+
+
+@dataclass(slots=True)
+class VisualExtractionItem:
+    """Single page/slide extraction result from screenshot + vision LLM."""
+
+    index: int
+    markdown: str
+    caption: str
+    metadata: JSONDict = field(default_factory=dict)
+    raw_response: JSONDict | None = None
+
+    def to_dict(self) -> JSONDict:
+        return {
+            "index": self.index,
+            "markdown": self.markdown,
+            "caption": self.caption,
+        }
+
+
+@dataclass(slots=True)
+class FileManifest:
+    """Metadata describing the document-level extraction operation."""
+
+    source_path: str
+    file_type: str
+    item_type: str
+    item_count: int
+    extraction_mode: str = "vision_markdown_caption"
+    metadata: JSONDict = field(default_factory=dict)
+
+    def to_dict(self) -> JSONDict:
+        payload: JSONDict = {
+            "source_path": self.source_path,
+            "file_type": self.file_type,
+            "item_type": self.item_type,
+            "item_count": self.item_count,
+            "extraction_mode": self.extraction_mode,
+        }
+        if self.metadata:
+            payload["metadata"] = dict(self.metadata)
+        return payload
+
+
+@dataclass(slots=True)
+class VisualExtractionResult:
+    """Combined file manifest + extracted page/slide items."""
+
+    file_manifest: FileManifest
+    items: list[VisualExtractionItem]
+
+    def to_dict(self) -> JSONDict:
+        return {
+            "file_manifest": self.file_manifest.to_dict(),
+            "items": [item.to_dict() for item in self.items],
+        }

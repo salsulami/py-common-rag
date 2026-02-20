@@ -2,6 +2,7 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from pathlib import Path
 
 from rag_common.exceptions import UnsupportedFileTypeError
@@ -9,7 +10,7 @@ from rag_common.parsers.base import BaseDocumentParser
 from rag_common.parsers.docx import DocxParser
 from rag_common.parsers.pdf import PdfParser
 from rag_common.parsers.pptx import PptxParser
-from rag_common.types import ParsedDocument
+from rag_common.types import JSONDict, ParsedDocument, VisualExtractionItem, VisualExtractionResult
 
 
 class DocumentParserRouter:
@@ -35,7 +36,46 @@ class DocumentParserRouter:
         self._parsers[normalized_ext] = parser
 
     def parse(self, source_path: str) -> ParsedDocument:
+        parser = self._resolve_parser(source_path)
+        return parser.parse(source_path)
+
+    def stream_visual_items(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+    ) -> Iterator[VisualExtractionItem]:
+        parser = self._resolve_parser(source_path, for_visual=True)
+        yield from parser.iter_visual_items(source_path, dpi=dpi)
+
+    def stream_visual_json_items(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+    ) -> Iterator[JSONDict]:
+        for item in self.stream_visual_items(source_path, dpi=dpi):
+            yield item.to_dict()
+
+    def extract_visual_result(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+    ) -> VisualExtractionResult:
+        parser = self._resolve_parser(source_path, for_visual=True)
+        return parser.extract_visual_result(source_path, dpi=dpi)
+
+    def extract_visual_json(self, source_path: str, *, dpi: int = 170) -> JSONDict:
+        return self.extract_visual_result(source_path, dpi=dpi).to_dict()
+
+    def _resolve_parser(self, source_path: str, *, for_visual: bool = False) -> BaseDocumentParser:
         ext = Path(source_path).suffix.lower()
+        if for_visual and ext in {".doc", ".docm"}:
+            ext = ".docx"
+        if for_visual and ext in {".ppt", ".pptm"}:
+            ext = ".pptx"
+
         parser = self._parsers.get(ext)
         if parser is None:
             if ext in {".doc", ".ppt"}:
@@ -48,4 +88,4 @@ class DocumentParserRouter:
                 "Supported extensions: "
                 + ", ".join(sorted(self._parsers))
             )
-        return parser.parse(source_path)
+        return parser

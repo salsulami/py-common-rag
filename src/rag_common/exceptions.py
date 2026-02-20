@@ -17,5 +17,9 @@ class MissingDependencyError(RagCommonError):
     """Raised when an optional parser dependency is missing."""
 
 
+class DocumentConversionError(RagCommonError):
+    """Raised when a source file cannot be converted for visual rendering."""
+
+
 class UnsupportedFileTypeError(RagCommonError):
     """Raised when no parser supports a file extension."""

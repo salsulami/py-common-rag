@@ -6,6 +6,9 @@ PROMPT_HYPOTHESIS = "reasoning.hypothesis_generation"
 PROMPT_PDF_CLEANUP = "parsers.pdf.cleanup"
 PROMPT_PPTX_CLEANUP = "parsers.pptx.cleanup"
 PROMPT_DOCX_CLEANUP = "parsers.docx.cleanup"
+PROMPT_PDF_VISION_EXTRACTION = "parsers.pdf.vision_markdown_caption"
+PROMPT_PPTX_VISION_EXTRACTION = "parsers.pptx.vision_markdown_caption"
+PROMPT_DOCX_VISION_EXTRACTION = "parsers.docx.vision_markdown_caption"
 
 DEFAULT_PROMPTS: dict[str, str] = {
     PROMPT_QUERY_EXPANSION: """
@@ -120,5 +123,65 @@ Rules:
 
 Text:
 {text}
+""".strip(),
+    PROMPT_PDF_VISION_EXTRACTION: """
+You are reading a screenshot of a PDF page.
+Extract faithful Markdown and create a concise caption.
+Output strict JSON only:
+{{
+  "markdown": "...",
+  "caption": "..."
+}}
+
+Rules:
+- Capture all legible text and structure using Markdown.
+- Preserve headings, lists, and table-like layouts when visible.
+- Do not invent content that is not present in the image.
+- caption should summarize the page in one sentence.
+
+Metadata:
+- source_path: {source_path}
+- item_type: {item_type}
+- index: {index}
+""".strip(),
+    PROMPT_PPTX_VISION_EXTRACTION: """
+You are reading a screenshot of a PowerPoint slide.
+Extract faithful Markdown and create a concise caption.
+Output strict JSON only:
+{{
+  "markdown": "...",
+  "caption": "..."
+}}
+
+Rules:
+- Preserve title, bullets, and visible table/text hierarchy.
+- Include key chart/diagram labels if legible.
+- Do not invent content that is not present in the image.
+- caption should summarize the slide in one sentence.
+
+Metadata:
+- source_path: {source_path}
+- item_type: {item_type}
+- index: {index}
+""".strip(),
+    PROMPT_DOCX_VISION_EXTRACTION: """
+You are reading a screenshot of a Word document page.
+Extract faithful Markdown and create a concise caption.
+Output strict JSON only:
+{{
+  "markdown": "...",
+  "caption": "..."
+}}
+
+Rules:
+- Preserve visible section hierarchy and list/numbering structure.
+- Reconstruct table-like structures when clearly visible.
+- Do not invent content that is not present in the image.
+- caption should summarize the page in one sentence.
+
+Metadata:
+- source_path: {source_path}
+- item_type: {item_type}
+- index: {index}
 """.strip(),
 }

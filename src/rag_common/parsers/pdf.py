@@ -2,16 +2,26 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
+
 from rag_common.exceptions import MissingDependencyError
 from rag_common.parsers.base import BaseDocumentParser
-from rag_common.prompts import PROMPT_PDF_CLEANUP
-from rag_common.types import DocumentChunk, ParsedDocument
+from rag_common.parsers.rendering import iter_pdf_page_images
+from rag_common.prompts import PROMPT_PDF_CLEANUP, PROMPT_PDF_VISION_EXTRACTION
+from rag_common.types import (
+    DocumentChunk,
+    FileManifest,
+    ParsedDocument,
+    VisualExtractionItem,
+    VisualExtractionResult,
+)
 
 
 class PdfParser(BaseDocumentParser):
     """Parses PDF files into chunked text suitable for RAG indexing."""
 
     prompt_key = PROMPT_PDF_CLEANUP
+    vision_prompt_key = PROMPT_PDF_VISION_EXTRACTION
 
     def parse(self, source_path: str) -> ParsedDocument:
         path = self._resolve_source_path(source_path)
@@ -43,6 +53,39 @@ class PdfParser(BaseDocumentParser):
                 "chunk_count": len(chunks),
             },
         )
+
+    def iter_visual_items(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+    ) -> Iterator[VisualExtractionItem]:
+        path = self._resolve_source_path(source_path)
+        for page_index, image_bytes in iter_pdf_page_images(path, dpi=dpi):
+            yield self._extract_visual_item(
+                source_path=str(path),
+                index=page_index,
+                item_type="page",
+                image_bytes=image_bytes,
+                prompt_key=self.vision_prompt_key,
+            )
+
+    def extract_visual_result(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+    ) -> VisualExtractionResult:
+        path = self._resolve_source_path(source_path)
+        items = list(self.iter_visual_items(str(path), dpi=dpi))
+        manifest = FileManifest(
+            source_path=str(path),
+            file_type=path.suffix.lower().lstrip("."),
+            item_type="page",
+            item_count=len(items),
+            metadata={"dpi": dpi},
+        )
+        return VisualExtractionResult(file_manifest=manifest, items=items)
 
 
 def _load_pdf_reader():

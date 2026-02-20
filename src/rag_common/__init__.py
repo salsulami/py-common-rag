@@ -5,10 +5,12 @@ from rag_common.pipeline import RagComponents
 from rag_common.prompts import PromptRegistry
 from rag_common.reasoning import HypothesisGenerator
 from rag_common.retrieval import QueryDecomposer, QueryExpander
+from rag_common.types import FileManifest, VisualExtractionItem, VisualExtractionResult
 
 __all__ = [
     "DocxParser",
     "DocumentParserRouter",
+    "FileManifest",
     "HypothesisGenerator",
     "PdfParser",
     "PromptRegistry",
@@ -16,4 +18,6 @@ __all__ = [
     "RagComponents",
     "QueryDecomposer",
     "QueryExpander",
+    "VisualExtractionItem",
+    "VisualExtractionResult",
 ]

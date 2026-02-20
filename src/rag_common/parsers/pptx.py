@@ -2,18 +2,27 @@
 
 from __future__ import annotations
 
+from collections.abc import Iterator
 from typing import Any
 
 from rag_common.exceptions import MissingDependencyError
 from rag_common.parsers.base import BaseDocumentParser
-from rag_common.prompts import PROMPT_PPTX_CLEANUP
-from rag_common.types import DocumentChunk, ParsedDocument
+from rag_common.parsers.rendering import iter_office_page_images
+from rag_common.prompts import PROMPT_PPTX_CLEANUP, PROMPT_PPTX_VISION_EXTRACTION
+from rag_common.types import (
+    DocumentChunk,
+    FileManifest,
+    ParsedDocument,
+    VisualExtractionItem,
+    VisualExtractionResult,
+)
 
 
 class PptxParser(BaseDocumentParser):
     """Parses PPTX files into slide-oriented chunks."""
 
     prompt_key = PROMPT_PPTX_CLEANUP
+    vision_prompt_key = PROMPT_PPTX_VISION_EXTRACTION
 
     def parse(self, source_path: str) -> ParsedDocument:
         path = self._resolve_source_path(source_path)
@@ -50,6 +59,39 @@ class PptxParser(BaseDocumentParser):
                 "chunk_count": len(chunks),
             },
         )
+
+    def iter_visual_items(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+    ) -> Iterator[VisualExtractionItem]:
+        path = self._resolve_source_path(source_path)
+        for slide_index, image_bytes in iter_office_page_images(path, dpi=dpi):
+            yield self._extract_visual_item(
+                source_path=str(path),
+                index=slide_index,
+                item_type="slide",
+                image_bytes=image_bytes,
+                prompt_key=self.vision_prompt_key,
+            )
+
+    def extract_visual_result(
+        self,
+        source_path: str,
+        *,
+        dpi: int = 170,
+    ) -> VisualExtractionResult:
+        path = self._resolve_source_path(source_path)
+        items = list(self.iter_visual_items(str(path), dpi=dpi))
+        manifest = FileManifest(
+            source_path=str(path),
+            file_type=path.suffix.lower().lstrip("."),
+            item_type="slide",
+            item_count=len(items),
+            metadata={"dpi": dpi},
+        )
+        return VisualExtractionResult(file_manifest=manifest, items=items)
 
 
 def _extract_shape_text(shape: Any) -> list[str]:
