@@ -1,0 +1,21 @@
+"""Custom exceptions for the RAG common library."""
+
+
+class RagCommonError(Exception):
+    """Base class for library exceptions."""
+
+
+class PromptNotFoundError(RagCommonError):
+    """Raised when a prompt key is unknown."""
+
+
+class ResponseFormatError(RagCommonError):
+    """Raised when an LLM response cannot be parsed as expected."""
+
+
+class MissingDependencyError(RagCommonError):
+    """Raised when an optional parser dependency is missing."""
+
+
+class UnsupportedFileTypeError(RagCommonError):
+    """Raised when no parser supports a file extension."""

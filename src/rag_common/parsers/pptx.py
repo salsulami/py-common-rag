@@ -1,0 +1,83 @@
+"""PowerPoint parser component."""
+
+from __future__ import annotations
+
+from typing import Any
+
+from rag_common.exceptions import MissingDependencyError
+from rag_common.parsers.base import BaseDocumentParser
+from rag_common.prompts import PROMPT_PPTX_CLEANUP
+from rag_common.types import DocumentChunk, ParsedDocument
+
+
+class PptxParser(BaseDocumentParser):
+    """Parses PPTX files into slide-oriented chunks."""
+
+    prompt_key = PROMPT_PPTX_CLEANUP
+
+    def parse(self, source_path: str) -> ParsedDocument:
+        path = self._resolve_source_path(source_path)
+        presentation_cls = _load_presentation()
+        presentation = presentation_cls(str(path))
+
+        chunks: list[DocumentChunk] = []
+        for slide_number, slide in enumerate(presentation.slides, start=1):
+            slide_lines: list[str] = []
+            for shape in slide.shapes:
+                slide_lines.extend(_extract_shape_text(shape))
+
+            slide_text = "\n".join(line.strip() for line in slide_lines if line.strip()).strip()
+            if not slide_text:
+                continue
+
+            chunks.append(
+                DocumentChunk(
+                    text=slide_text,
+                    order=slide_number,
+                    metadata={"slide_number": slide_number},
+                )
+            )
+
+        chunks = self._normalize_chunks(chunks)
+        content = "\n\n".join(chunk.text for chunk in chunks).strip()
+        return ParsedDocument(
+            source_path=str(path),
+            content=content,
+            chunks=chunks,
+            metadata={
+                "parser": "pptx",
+                "slide_count": len(presentation.slides),
+                "chunk_count": len(chunks),
+            },
+        )
+
+
+def _extract_shape_text(shape: Any) -> list[str]:
+    lines: list[str] = []
+
+    has_text_frame = bool(getattr(shape, "has_text_frame", False))
+    if has_text_frame:
+        text = getattr(shape, "text", "")
+        if isinstance(text, str) and text.strip():
+            lines.append(text.strip())
+
+    has_table = bool(getattr(shape, "has_table", False))
+    if has_table:
+        table = getattr(shape, "table", None)
+        if table is not None:
+            for row in table.rows:
+                row_cells = [cell.text.strip() for cell in row.cells if cell.text and cell.text.strip()]
+                if row_cells:
+                    lines.append(" | ".join(row_cells))
+
+    return lines
+
+
+def _load_presentation():
+    try:
+        from pptx import Presentation
+    except ImportError as exc:  # pragma: no cover - optional dependency
+        raise MissingDependencyError(
+            "PptxParser requires 'python-pptx'. Install with: pip install python-pptx"
+        ) from exc
+    return Presentation
